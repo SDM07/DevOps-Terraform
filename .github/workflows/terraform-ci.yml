@@ -62,7 +62,7 @@ jobs:
           terraform -chdir=terraform/modules/ecs-service init -backend=false
           terraform -chdir=terraform/modules/ecs-service test
 
-      - uses: terraform-linters/setup-tflint@v4
+      - uses: terraform-linters/setup-tflint@v6
       - name: tflint
         run: |
           tflint --init --config "$GITHUB_WORKSPACE/.tflint.hcl"
