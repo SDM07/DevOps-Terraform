@@ -54,7 +54,7 @@ jobs:
           terraform show -json tfplan > plan.json
           "$GITHUB_WORKSPACE/scripts/plan-guard.sh" plan.json dev
           cat plan-summary.md >> "$GITHUB_STEP_SUMMARY"
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: tfplan-dev
           path: terraform/envs/dev/tfplan
@@ -124,7 +124,7 @@ jobs:
           # solo se publica el resumen para el aprobador.
           "$GITHUB_WORKSPACE/scripts/plan-guard.sh" plan.json prod true
           cat plan-summary.md >> "$GITHUB_STEP_SUMMARY"
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: tfplan-prod
           path: |
