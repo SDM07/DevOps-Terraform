@@ -84,7 +84,7 @@ jobs:
 
       - name: Publicar hallazgos en Code Scanning
         if: always() && hashFiles('checkov.sarif') != ''
-        uses: github/codeql-action/upload-sarif@v3
+        uses: github/codeql-action/upload-sarif@v4
         with:
           sarif_file: checkov.sarif
 
