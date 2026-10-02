@@ -1,0 +1,47 @@
+flowchart LR
+  subgraph DEVS["Equipo"]
+    DEV["👩‍💻 Desarrollador<br/>SSO + MFA"]
+  end
+
+  subgraph GH["GitHub · sdm07/devops-terraform"]
+    direction TB
+    PR["Pull Request<br/>feature/* → main"]
+    CI["terraform-ci<br/>fmt · validate · tflint · test<br/>Checkov · Gitleaks · plan"]
+    CD["terraform-cd<br/>apply dev → apply prod"]
+    ENVDEV["Environment dev"]
+    ENVPROD["Environment prod<br/>🔒 2 aprobadores · solo main"]
+    PR --> CI --> CD
+    CD --> ENVDEV
+    CD --> ENVPROD
+  end
+
+  subgraph ORG["AWS Organizations · SCPs · CloudTrail org · GuardDuty · Security Hub"]
+    direction TB
+    subgraph SHARED["Cuenta Shared Services"]
+      ECR["ECR<br/>imágenes firmadas + scan"]
+    end
+    subgraph DEVACC["Cuenta DEV"]
+      direction TB
+      DSTATE["S3 tfstate + KMS<br/>lockfile nativo"]
+      DROLES["IAM OIDC<br/>gha-terraform-plan-dev<br/>gha-terraform-apply-dev"]
+      DAPP["VPC 2 AZ · ALB+WAF<br/>ECS Fargate (Spot)"]
+    end
+    subgraph PRODACC["Cuenta PROD"]
+      direction TB
+      PSTATE["S3 tfstate + KMS<br/>lockfile nativo"]
+      PROLES["IAM OIDC<br/>gha-terraform-plan-prod<br/>gha-terraform-apply-prod"]
+      PAPP["VPC 3 AZ · ALB+WAF+TLS<br/>ECS Fargate (on-demand + Spot)"]
+    end
+  end
+
+  DEV -- "git push / PR" --> PR
+  CI -- "OIDC sub=pull_request<br/>solo lectura" --> DROLES
+  CI -- "OIDC sub=pull_request<br/>solo lectura" --> PROLES
+  ENVDEV -- "OIDC sub=environment:dev" --> DROLES
+  ENVPROD -- "OIDC sub=environment:prod" --> PROLES
+  DROLES --> DSTATE
+  DROLES --> DAPP
+  PROLES --> PSTATE
+  PROLES --> PAPP
+  ECR -. "pull vía VPC endpoint" .-> DAPP
+  ECR -. "pull por digest" .-> PAPP

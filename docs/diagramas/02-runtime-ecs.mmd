@@ -1,0 +1,34 @@
+flowchart TB
+  USER["🌐 Usuarios"] -->|"HTTPS 443"| WAF["AWS WAF<br/>Common · BadInputs · Rate limit"]
+
+  subgraph VPC["VPC prod 10.20.0.0/16 · 3 AZ · VPC Flow Logs"]
+    direction TB
+    subgraph PUB["Subredes públicas"]
+      ALB["Application Load Balancer<br/>TLS 1.3 · HTTP→HTTPS · access logs"]
+      NAT["NAT Gateway (uno por AZ)"]
+    end
+    subgraph PRIV["Subredes privadas · sin IP pública"]
+      SVC["Servicio ECS Fargate (ARM64)<br/>mín 3 tareas, 1 por AZ · máx 20<br/>read-only FS · non-root · drop ALL caps"]
+      VPCE["VPC Endpoints<br/>ECR · S3 · Logs · Secrets Manager · KMS · STS"]
+    end
+  end
+
+  WAF --> ALB
+  ALB -->|"solo SG-ALB → SG-tareas :8080"| SVC
+  SVC -->|"tráfico privado a AWS"| VPCE
+  SVC -.->|"443 a APIs externas"| NAT
+
+  subgraph CTRL["Plano de control y operación"]
+    direction LR
+    CW["CloudWatch<br/>Container Insights<br/>alarmas 5XX · p95 · máx capacidad"]
+    AS["Application Auto Scaling<br/>CPU 60% · Mem 70%<br/>Requests por tarea"]
+    CB["Circuit breaker<br/>rollback automático"]
+    SM["Secrets Manager + KMS"]
+    SNS["SNS → on-call"]
+  end
+
+  CW -->|"métricas"| AS
+  AS -->|"ajusta desired count"| SVC
+  CB -.-> SVC
+  SM -.->|"inyectado en runtime"| SVC
+  CW --> SNS

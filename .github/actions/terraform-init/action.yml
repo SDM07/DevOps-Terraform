@@ -1,0 +1,40 @@
+name: terraform-init
+description: Instala Terraform, obtiene credenciales temporales via OIDC e inicializa un entorno.
+
+inputs:
+  environment:
+    description: dev | prod
+    required: true
+  role-to-assume:
+    description: ARN del rol IAM (plan o apply) a asumir con OIDC
+    required: true
+  aws-region:
+    description: Region AWS
+    required: false
+    default: us-east-1
+  terraform-version:
+    description: Version de Terraform
+    required: false
+    default: 1.13.3
+
+runs:
+  using: composite
+  steps:
+    - uses: hashicorp/setup-terraform@v3
+      with:
+        terraform_version: ${{ inputs.terraform-version }}
+        terraform_wrapper: false
+
+    # Credenciales temporales (1h) emitidas por STS a partir del token OIDC
+    # de GitHub. No existen access keys guardadas en ningun lado.
+    - uses: aws-actions/configure-aws-credentials@v4
+      with:
+        role-to-assume: ${{ inputs.role-to-assume }}
+        role-session-name: gha-${{ github.run_id }}-${{ inputs.environment }}
+        aws-region: ${{ inputs.aws-region }}
+        role-duration-seconds: 3600
+
+    - name: terraform init
+      shell: bash
+      working-directory: terraform/envs/${{ inputs.environment }}
+      run: terraform init -input=false -backend-config=backend.hcl

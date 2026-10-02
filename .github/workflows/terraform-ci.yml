@@ -1,0 +1,149 @@
+# =============================================================================
+# CI de Terraform - se ejecuta en cada Pull Request hacia main.
+#   1. static : formato, lint, validate, tests, seguridad (IaC + secretos)
+#   2. plan   : plan contra dev y prod con un rol de SOLO LECTURA, publicado
+#               en el PR para que los revisores aprueben sabiendo que cambia.
+# Nada se aplica desde un PR.
+# =============================================================================
+name: terraform-ci
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - "terraform/**"
+      - "scripts/**"
+      - ".github/workflows/terraform-*.yml"
+      - ".github/actions/**"
+    types: [opened, synchronize, reopened, labeled, unlabeled]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: terraform-ci-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+env:
+  TF_VERSION: 1.13.3
+  TF_IN_AUTOMATION: "true"
+  TF_INPUT: "false"
+
+jobs:
+  static:
+    name: Validación estática y seguridad
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      security-events: write # subir SARIF a GitHub code scanning
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: ${{ env.TF_VERSION }}
+
+      - name: terraform fmt
+        run: terraform fmt -check -recursive -diff terraform
+
+      - name: terraform validate
+        run: |
+          for dir in terraform/bootstrap terraform/envs/dev terraform/envs/prod; do
+            echo "::group::validate $dir"
+            terraform -chdir="$dir" init -backend=false
+            terraform -chdir="$dir" validate
+            echo "::endgroup::"
+          done
+
+      - name: terraform test (módulos con proveedor simulado)
+        run: |
+          terraform -chdir=terraform/modules/ecs-service init -backend=false
+          terraform -chdir=terraform/modules/ecs-service test
+
+      - uses: terraform-linters/setup-tflint@v4
+      - name: tflint
+        run: |
+          tflint --init --config "$GITHUB_WORKSPACE/.tflint.hcl"
+          tflint --recursive --config "$GITHUB_WORKSPACE/.tflint.hcl" --chdir terraform
+
+      - name: Checkov (misconfiguraciones IaC)
+        uses: bridgecrewio/checkov-action@v12
+        with:
+          directory: terraform
+          framework: terraform
+          output_format: cli,sarif
+          output_file_path: console,checkov.sarif
+          soft_fail: false
+
+      - name: Gitleaks (secretos en el código)
+        uses: gitleaks/gitleaks-action@v2
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Publicar hallazgos en Code Scanning
+        if: always() && hashFiles('checkov.sarif') != ''
+        uses: github/codeql-action/upload-sarif@v3
+        with:
+          sarif_file: checkov.sarif
+
+  plan:
+    name: Plan (${{ matrix.environment }})
+    needs: static
+    runs-on: ubuntu-latest
+    # PRs desde forks no reciben token OIDC: no pueden tocar AWS.
+    if: github.event.pull_request.head.repo.full_name == github.repository
+    permissions:
+      contents: read
+      id-token: write # necesario para OIDC
+      pull-requests: write # comentar el plan en el PR
+    strategy:
+      fail-fast: false
+      matrix:
+        environment: [dev, prod]
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: ./.github/actions/terraform-init
+        with:
+          environment: ${{ matrix.environment }}
+          # Rol de solo lectura; su trust policy solo acepta sub=pull_request.
+          role-to-assume: ${{ matrix.environment == 'prod' && vars.AWS_PLAN_ROLE_ARN_PROD || vars.AWS_PLAN_ROLE_ARN_DEV }}
+          terraform-version: ${{ env.TF_VERSION }}
+
+      - name: terraform plan
+        working-directory: terraform/envs/${{ matrix.environment }}
+        run: |
+          terraform plan -lock=false -out=tfplan
+          terraform show -json tfplan > plan.json
+          terraform show -no-color tfplan > plan.txt
+
+      - name: Guardia del plan (destroy/replace en prod)
+        working-directory: terraform/envs/${{ matrix.environment }}
+        run: |
+          "$GITHUB_WORKSPACE/scripts/plan-guard.sh" plan.json "${{ matrix.environment }}" \
+            "${{ contains(github.event.pull_request.labels.*.name, 'allow-destroy') }}"
+
+      - name: Comentar plan en el PR
+        if: always()
+        uses: actions/github-script@v7
+        env:
+          ENVIRONMENT: ${{ matrix.environment }}
+        with:
+          script: |
+            const fs = require('fs');
+            const dir = `terraform/envs/${process.env.ENVIRONMENT}`;
+            const read = (f) => fs.existsSync(`${dir}/${f}`) ? fs.readFileSync(`${dir}/${f}`, 'utf8') : '';
+            const summary = read('plan-summary.md') || `### Terraform plan · \`${process.env.ENVIRONMENT}\`\n\n❌ El plan falló, revisar logs.`;
+            let plan = read('plan.txt');
+            if (plan.length > 55000) plan = plan.slice(0, 55000) + '\n... (truncado, ver artefacto)';
+            const marker = `<!-- tf-plan-${process.env.ENVIRONMENT} -->`;
+            const body = `${marker}\n${summary}\n\n<details><summary>Ver plan completo</summary>\n\n\`\`\`hcl\n${plan}\n\`\`\`\n</details>\n\n_Commit ${context.sha.substring(0, 7)} · [run](${context.serverUrl}/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId})_`;
+            const { data: comments } = await github.rest.issues.listComments({ ...context.repo, issue_number: context.issue.number });
+            const previous = comments.find(c => c.body.includes(marker));
+            if (previous) {
+              await github.rest.issues.updateComment({ ...context.repo, comment_id: previous.id, body });
+            } else {
+              await github.rest.issues.createComment({ ...context.repo, issue_number: context.issue.number, body });
+            }

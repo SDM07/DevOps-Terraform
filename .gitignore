@@ -1,0 +1,26 @@
+# Terraform
+**/.terraform/*
+*.tfstate
+*.tfstate.*
+*.tfplan
+tfplan*
+crash.log
+crash.*.log
+override.tf
+override.tf.json
+*_override.tf
+*_override.tf.json
+.terraformrc
+terraform.rc
+
+# Secretos: nunca se versionan
+*.pem
+*.key
+.env
+*.auto.tfvars
+secrets*.tfvars
+
+# OS / IDE
+.DS_Store
+.idea/
+.vscode/

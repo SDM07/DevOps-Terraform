@@ -1,0 +1,14 @@
+version: 2
+updates:
+  - package-ecosystem: terraform
+    directories: ["/terraform/envs/dev", "/terraform/envs/prod", "/terraform/bootstrap"]
+    schedule:
+      interval: weekly
+    groups:
+      providers:
+        patterns: ["*"]
+
+  - package-ecosystem: github-actions
+    directory: "/"
+    schedule:
+      interval: weekly
