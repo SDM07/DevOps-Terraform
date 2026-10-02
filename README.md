@@ -58,6 +58,7 @@ Diagrama editable en draw.io (3 páginas): [`docs/diagramas/arquitectura.drawio`
 | 7 | Controles de seguridad adicionales y Zero Trust | [docs/06-seguridad-zero-trust.md](docs/06-seguridad-zero-trust.md) |
 | — | Casos prácticos 1, 2 y 3 | [docs/07-casos-practicos.md](docs/07-casos-practicos.md) |
 | — | Guion del video | [docs/08-guion-video.md](docs/08-guion-video.md) |
+| — | Diálogo completo para grabar | [docs/10-dialogo-video.md](docs/10-dialogo-video.md) |
 | — | Puesta en marcha (paso a paso) | [docs/09-puesta-en-marcha.md](docs/09-puesta-en-marcha.md) |
 
 ## Validación local
