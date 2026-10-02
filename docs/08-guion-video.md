@@ -1,6 +1,6 @@
 # Guion del video (≈ 15–18 minutos)
 
-> Consejo: graba en bloques, uno por sección, y luego une los clips. Ten abiertos en pestañas: el diagrama general, VS Code con el repo, el PR de ejemplo en GitHub y la pestaña Actions.
+> Consejo: graba en bloques, uno por sección, y luego une los clips. Ten abiertos en pestañas: el diagrama `docs/diagramas/arquitectura.drawio` en app.diagrams.net (3 páginas), VS Code con el repo, el PR de ejemplo en GitHub y la pestaña Actions.
 
 | # | Bloque | Tiempo | Qué mostrar en pantalla |
 |---|---|---|---|

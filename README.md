@@ -15,6 +15,8 @@ Esta es una propuesta completa, con código que funciona, para:
 
 ![Arquitectura general](docs/diagramas/01-arquitectura-general.png)
 
+Diagrama editable en draw.io (3 páginas): [`docs/diagramas/arquitectura.drawio`](docs/diagramas/arquitectura.drawio)
+
 ## Estructura del repositorio
 
 ```
@@ -38,7 +40,7 @@ Esta es una propuesta completa, con código que funciona, para:
 │       ├── dev/                   # mismos módulos, valores de dev
 │       └── prod/                  # mismos módulos, valores de prod
 ├── scripts/plan-guard.sh          # bloquea destroy/replace en prod y resume el plan
-├── docs/                          # arquitectura, respuestas, casos prácticos y guion del video
+├── docs/                          # diagramas draw.io, arquitectura, respuestas, casos prácticos y guion del video
 ├── .tflint.hcl
 └── .pre-commit-config.yaml
 ```

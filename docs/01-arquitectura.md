@@ -1,12 +1,16 @@
 # 1. Arquitectura e infraestructura
 
-Los diagramas están en código Mermaid (`docs/diagramas/*.mmd`), así que se versionan y se revisan en PR igual que el resto del repo. Las imágenes `.png` se generan con:
+Los diagramas están hechos en **draw.io** con los íconos oficiales de AWS (Architecture Icons) en un solo archivo de 3 páginas:
 
-```bash
-npx -p @mermaid-js/mermaid-cli mmdc -i docs/diagramas/01-arquitectura-general.mmd -o docs/diagramas/01-arquitectura-general.png -s 2
-```
+**[`docs/diagramas/arquitectura.drawio`](diagramas/arquitectura.drawio)**
 
-> Si prefieres otro programa para el video (draw.io, Excalidraw o Lucidchart), puedes importar el `.mmd` en draw.io (*Arrange → Insert → Advanced → Mermaid*) y aplicarle los íconos oficiales de AWS.
+| Página | Contenido |
+|---|---|
+| 1 · Arquitectura general | GitHub (CI/CD, environments) → AWS Organizations (Management, Security, Shared Services, DEV, PROD) y los flujos OIDC |
+| 2 · Runtime prod (ECS Fargate) | Región, VPC, 3 AZ, subredes públicas y privadas, ALB, WAF, NAT, tareas, endpoints y plano de control |
+| 3 · Pipeline CI/CD | Carriles PR (terraform-ci) y merge a main (terraform-cd) con sus puertas de aprobación |
+
+Cómo abrirlo o editarlo: en https://app.diagrams.net (*File → Open from → Device*), en draw.io Desktop o en VS Code con la extensión *Draw.io Integration*. Las imágenes `.png` de abajo se exportaron de ese archivo (*File → Export as → PNG*, zoom 200 %).
 
 ---
 
