@@ -1,0 +1,56 @@
+# =============================================================================
+# Deteccion de drift: cada dia compara el estado real de AWS con el codigo.
+# Si alguien cambio algo a mano (consola), se abre un issue. El codigo es la
+# unica fuente de verdad.
+# =============================================================================
+name: terraform-drift
+
+on:
+  schedule:
+    - cron: "17 11 * * 1-5" # dias habiles, 06:17 hora Colombia
+  workflow_dispatch: {}
+
+permissions:
+  contents: read
+
+jobs:
+  drift:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write
+      issues: write
+    strategy:
+      fail-fast: false
+      matrix:
+        environment: [dev, prod]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ./.github/actions/terraform-init
+        with:
+          environment: ${{ matrix.environment }}
+          role-to-assume: ${{ matrix.environment == 'prod' && vars.AWS_PLAN_ROLE_ARN_PROD || vars.AWS_PLAN_ROLE_ARN_DEV }}
+      - name: terraform plan -detailed-exitcode
+        id: plan
+        working-directory: terraform/envs/${{ matrix.environment }}
+        run: |
+          set +e
+          terraform plan -lock=false -detailed-exitcode -no-color > drift.txt
+          code=$?
+          echo "exitcode=$code" >> "$GITHUB_OUTPUT"
+          [ "$code" -eq 1 ] && exit 1 || exit 0
+      - name: Abrir issue si hay drift
+        if: steps.plan.outputs.exitcode == '2'
+        uses: actions/github-script@v7
+        env:
+          ENVIRONMENT: ${{ matrix.environment }}
+        with:
+          script: |
+            const fs = require('fs');
+            const out = fs.readFileSync(`terraform/envs/${process.env.ENVIRONMENT}/drift.txt`, 'utf8').slice(-60000);
+            await github.rest.issues.create({
+              ...context.repo,
+              title: `Drift detectado en ${process.env.ENVIRONMENT}`,
+              labels: ['drift', process.env.ENVIRONMENT],
+              body: `La infraestructura real difiere del código.\n\n\`\`\`\n${out}\n\`\`\``,
+            });

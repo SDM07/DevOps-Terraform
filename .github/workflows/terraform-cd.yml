@@ -1,0 +1,175 @@
+# =============================================================================
+# CD de Terraform - se ejecuta al hacer merge a main.
+#
+#   plan-dev -> apply-dev -> smoke-dev -> plan-prod -> [APROBACION] -> apply-prod -> smoke-prod
+#
+# * El MISMO commit pasa por dev y luego por prod (promocion, no rebuild).
+# * Cada apply ejecuta exactamente el plan guardado que se reviso; si el
+#   estado cambio entre plan y apply, Terraform rechaza el plan (stale).
+# * apply-prod corre dentro del GitHub Environment "prod": requiere
+#   aprobadores, solo acepta la rama main, y es el UNICO contexto cuyo token
+#   OIDC puede asumir el rol de escritura de la cuenta prod.
+# =============================================================================
+name: terraform-cd
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "terraform/envs/**"
+      - "terraform/modules/**"
+  workflow_dispatch: {}
+
+permissions:
+  contents: read
+
+# Nunca dos despliegues simultaneos, y nunca se cancela uno a medias.
+concurrency:
+  group: terraform-cd
+  cancel-in-progress: false
+
+env:
+  TF_VERSION: 1.13.3
+  TF_IN_AUTOMATION: "true"
+  TF_INPUT: "false"
+
+jobs:
+  # ------------------------------------------------------------------ DEV ----
+  plan-dev:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ./.github/actions/terraform-init
+        with:
+          environment: dev
+          role-to-assume: ${{ vars.AWS_PLAN_ROLE_ARN_DEV }}
+          terraform-version: ${{ env.TF_VERSION }}
+      - name: terraform plan
+        working-directory: terraform/envs/dev
+        run: |
+          terraform plan -out=tfplan
+          terraform show -json tfplan > plan.json
+          "$GITHUB_WORKSPACE/scripts/plan-guard.sh" plan.json dev
+          cat plan-summary.md >> "$GITHUB_STEP_SUMMARY"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: tfplan-dev
+          path: terraform/envs/dev/tfplan
+          retention-days: 5
+
+  apply-dev:
+    needs: plan-dev
+    runs-on: ubuntu-latest
+    environment:
+      name: dev
+      url: ${{ steps.out.outputs.url }}
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ./.github/actions/terraform-init
+        with:
+          environment: dev
+          role-to-assume: ${{ vars.AWS_APPLY_ROLE_ARN }} # variable del environment "dev"
+          terraform-version: ${{ env.TF_VERSION }}
+      - uses: actions/download-artifact@v4
+        with:
+          name: tfplan-dev
+          path: terraform/envs/dev
+      - name: terraform apply (plan guardado)
+        working-directory: terraform/envs/dev
+        run: terraform apply tfplan
+      - id: out
+        working-directory: terraform/envs/dev
+        run: echo "url=$(terraform output -raw service_url)" >> "$GITHUB_OUTPUT"
+      - name: Esperar a que el servicio ECS se estabilice
+        working-directory: terraform/envs/dev
+        run: |
+          aws ecs wait services-stable \
+            --cluster "$(terraform output -raw cluster_name)" \
+            --services "$(terraform output -raw service_name)"
+      - name: Smoke test
+        run: |
+          for i in $(seq 1 10); do
+            curl -fsS --max-time 5 "${{ steps.out.outputs.url }}/health" && exit 0
+            sleep 10
+          done
+          echo "::error::Smoke test de dev falló"; exit 1
+
+  # ----------------------------------------------------------------- PROD ----
+  plan-prod:
+    needs: apply-dev
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ./.github/actions/terraform-init
+        with:
+          environment: prod
+          role-to-assume: ${{ vars.AWS_PLAN_ROLE_ARN_PROD }}
+          terraform-version: ${{ env.TF_VERSION }}
+      - name: terraform plan
+        working-directory: terraform/envs/prod
+        run: |
+          terraform plan -out=tfplan
+          terraform show -json tfplan > plan.json
+          terraform show -no-color tfplan > plan.txt
+          # La guardia ya se paso en el PR (con o sin allow-destroy); aqui
+          # solo se publica el resumen para el aprobador.
+          "$GITHUB_WORKSPACE/scripts/plan-guard.sh" plan.json prod true
+          cat plan-summary.md >> "$GITHUB_STEP_SUMMARY"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: tfplan-prod
+          path: |
+            terraform/envs/prod/tfplan
+            terraform/envs/prod/plan.txt
+          retention-days: 5
+
+  apply-prod:
+    needs: plan-prod
+    runs-on: ubuntu-latest
+    # Environment "prod" configurado con: required reviewers (2, distintos al
+    # autor), prevent self-review, deployment branches = main, wait timer.
+    environment:
+      name: prod
+      url: ${{ steps.out.outputs.url }}
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ./.github/actions/terraform-init
+        with:
+          environment: prod
+          role-to-assume: ${{ vars.AWS_APPLY_ROLE_ARN }} # variable del environment "prod"
+          terraform-version: ${{ env.TF_VERSION }}
+      - uses: actions/download-artifact@v4
+        with:
+          name: tfplan-prod
+          path: terraform/envs/prod
+      - name: terraform apply (exactamente el plan aprobado)
+        working-directory: terraform/envs/prod
+        run: terraform apply tfplan
+      - id: out
+        working-directory: terraform/envs/prod
+        run: echo "url=$(terraform output -raw service_url)" >> "$GITHUB_OUTPUT"
+      - name: Esperar estabilidad (el circuit breaker hace rollback si falla)
+        working-directory: terraform/envs/prod
+        run: |
+          aws ecs wait services-stable \
+            --cluster "$(terraform output -raw cluster_name)" \
+            --services "$(terraform output -raw service_name)"
+      - name: Smoke test
+        run: |
+          for i in $(seq 1 10); do
+            curl -fsS --max-time 5 "${{ steps.out.outputs.url }}/health" && exit 0
+            sleep 10
+          done
+          echo "::error::Smoke test de prod falló"; exit 1

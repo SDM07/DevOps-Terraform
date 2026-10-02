@@ -1,0 +1,8 @@
+# Toda la infraestructura requiere aprobacion del equipo de plataforma.
+*                                   @sdm07
+
+# Prod, identidad y pipelines requieren ademas a seguridad.
+/terraform/envs/prod/               @sdm07
+/terraform/modules/github-oidc/     @sdm07
+/terraform/bootstrap/               @sdm07
+/.github/                           @sdm07
