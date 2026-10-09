@@ -76,7 +76,7 @@ jobs:
           environment: dev
           role-to-assume: ${{ vars.AWS_APPLY_ROLE_ARN }} # variable del environment "dev"
           terraform-version: ${{ env.TF_VERSION }}
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v7
         with:
           name: tfplan-dev
           path: terraform/envs/dev
@@ -150,7 +150,7 @@ jobs:
           environment: prod
           role-to-assume: ${{ vars.AWS_APPLY_ROLE_ARN }} # variable del environment "prod"
           terraform-version: ${{ env.TF_VERSION }}
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v7
         with:
           name: tfplan-prod
           path: terraform/envs/prod
