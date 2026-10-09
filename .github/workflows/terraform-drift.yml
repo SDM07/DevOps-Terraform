@@ -41,7 +41,7 @@ jobs:
           [ "$code" -eq 1 ] && exit 1 || exit 0
       - name: Abrir issue si hay drift
         if: steps.plan.outputs.exitcode == '2'
-        uses: actions/github-script@v7
+        uses: actions/github-script@v9
         env:
           ENVIRONMENT: ${{ matrix.environment }}
         with:
